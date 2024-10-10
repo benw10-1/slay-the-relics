@@ -84,6 +84,19 @@ func (d *deck) parse() error {
 
 	parts := bytes.Split(decompressed, []byte(";;;"))
 
+	if len(parts) != 2 {
+		return errors.New("invalid deck")
+	}
+
+	if len(parts[0]) == 1 && parts[0][0] == '-' {
+		// d.buf = []byte("No cards in deck")
+		return nil
+	}
+	if len(parts[1]) == 1 && parts[1][0] == '-' {
+		// d.buf = []byte("No cards in deck")
+		return nil
+	}
+
 	// read cards first so we can reference them as we read the card indexes
 	cards := make([][]byte, 0, bytes.Count(parts[1], []byte(";;"))+1)
 	longestCard := 0
@@ -118,7 +131,7 @@ func (d *deck) parse() error {
 		}
 
 		card := parseCardBytes(cards[cardIdxVal])
-		fmt.Printf("%d - %s - %s\n", cardIdxVal, string(card), string(cards[cardIdxVal]))
+		// fmt.Printf("%d - %s - %s\n", cardIdxVal, string(card), string(cards[cardIdxVal]))
 
 		if len(card) == 0 {
 			return nil
@@ -169,10 +182,6 @@ func (d *deck) parse() error {
 			d.buf = strconv.AppendInt(d.buf, int64(cardCount), 10)
 			d.buf = append(d.buf, '\n')
 		}
-	}
-
-	if len(d.buf) < cap(d.buf) {
-		d.buf = d.buf[:len(d.buf)]
 	}
 
 	return nil
