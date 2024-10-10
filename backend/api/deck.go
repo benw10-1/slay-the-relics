@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/exp/slices"
@@ -71,6 +72,17 @@ func (a *API) getDeckHandler(c *gin.Context) {
 	}
 
 	c.Data(200, "text/plain", []byte(result.String()))
+}
+
+// deck designed to be parsed once and then used for lookups. The load of the parsing is in the request context as to
+// not block the sub
+type deck struct {
+	// raw data not parsed, after parsing, raw data buf is freed and replaced by ready-to-use result
+	buf []byte
+
+	// ensures work is only done once even when racing for deck parse. Once its loaded, will be checked
+	// using atomic.LoadUint32 instead of a mutex lock
+	parseOnce sync.Once
 }
 
 func decompress(s string) (string, error) {
