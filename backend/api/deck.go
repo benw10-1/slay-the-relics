@@ -187,6 +187,7 @@ func decompressBytes(s []byte) ([]byte, error) {
 
 	for i := len(compressionDict) - 1; i >= 0; i-- {
 		word := compressionDict[i]
+		// TODO: this is the source of lots of allocs and CPU cycles, probably no need for regexp here
 		text = compressionWildcardRegex[i].ReplaceAll(text, word)
 	}
 
