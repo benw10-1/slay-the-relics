@@ -17,7 +17,7 @@ type API struct {
 	users       *slaytherelics.Users
 	broadcaster *slaytherelics.Broadcaster
 
-	deckLists map[string]string
+	deckLists map[string]*deck
 	deckLock  *sync.RWMutex
 }
 
@@ -36,7 +36,7 @@ func New(t *client.Twitch, u *slaytherelics.Users, b *slaytherelics.Broadcaster)
 		twitch:      t,
 		users:       u,
 		broadcaster: b,
-		deckLists:   make(map[string]string),
+		deckLists:   make(map[string]*deck),
 		deckLock:    &sync.RWMutex{},
 	}
 

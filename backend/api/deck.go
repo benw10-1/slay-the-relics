@@ -33,7 +33,7 @@ func (a *API) getDeckHandler(c *gin.Context) {
 	name := c.Param("name")
 	name = strings.ToLower(name)
 
-	deck, ok := func() (string, bool) {
+	deck, ok := func() (*deck, bool) {
 		a.deckLock.RLock()
 		defer a.deckLock.RUnlock()
 		deck, ok := a.deckLists[name]
@@ -44,36 +44,14 @@ func (a *API) getDeckHandler(c *gin.Context) {
 		c.JSON(404, gin.H{"error": "deck not found"})
 		return
 	}
-	d, err := decompressDeck(deck)
+
+	resBts, err := deck.Bytes()
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
 	}
 
-	keys := make([]string, 0, len(d))
-	for k := range d {
-		keys = append(keys, k)
-	}
-
-	slices.SortFunc(keys, func(i, j string) bool {
-		if i == "Ascender's Bane" {
-			return false
-		}
-		if j == "Ascender's Bane" {
-			return true
-		}
-		return i < j
-	})
-
-	result := strings.Builder{}
-	for _, k := range keys {
-		result.WriteString(k)
-		result.WriteString(" x")
-		result.WriteString(fmt.Sprint(d[k]))
-		result.WriteString("\n")
-	}
-
-	c.Data(200, "text/plain", []byte(result.String()))
+	c.Data(200, "text/plain", resBts)
 }
 
 // deck designed to be parsed once and then used for lookups. The load of the parsing is in the request context as to
