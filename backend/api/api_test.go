@@ -27,13 +27,26 @@ func TestDeckAPIHandler(t *testing.T) {
 
 	handlerFn := router.Router.Handler()
 
-	httpReq := httptest.NewRequest("GET", "/deck/"+testName, nil)
+	checkTestDeck := func() {
+		httpReq := httptest.NewRequest("GET", "/deck/"+testName, nil)
 
-	w := httptest.NewRecorder()
+		w := httptest.NewRecorder()
 
-	handlerFn.ServeHTTP(w, httpReq)
+		handlerFn.ServeHTTP(w, httpReq)
 
-	assert.Equal(t, w.Code, 200, w.Body.String())
+		assert.Equal(t, w.Code, 200, w.Body.String())
 
-	assert.Equal(t, w.Body.String(), expectedOutput)
+		assert.Equal(t, w.Body.String(), expectedOutput)
+	}
+
+	deckBuf := router.deckLists[testName].buf
+	assert.DeepEqual(t, string(deckBuf), bigDeckStr)
+
+	checkTestDeck()
+
+	// make sure that the decks parse result gets reused
+	deckBuf = router.deckLists[testName].buf
+	assert.DeepEqual(t, string(deckBuf), expectedOutput)
+
+	checkTestDeck()
 }
