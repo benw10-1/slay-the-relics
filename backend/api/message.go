@@ -55,7 +55,10 @@ func (a *API) postMessageHandler(c *gin.Context) {
 		func() {
 			a.deckLock.Lock()
 			defer a.deckLock.Unlock()
-			a.deckLists[strings.ToLower(user.Login)] = message["k"].(string)
+			a.deckLists[strings.ToLower(user.Login)] = &deck{
+				// copy is fine here, since otherwise this context would own this byte slice and produce the same effect
+				buf: []byte(message["k"].(string)),
+			}
 		}()
 	}
 	err = a.broadcast(c, ctx, req, user.ID, message)
