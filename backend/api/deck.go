@@ -54,6 +54,8 @@ func (a *API) getDeckHandler(c *gin.Context) {
 	c.Data(200, "text/plain", resBts)
 }
 
+// region deck parsing unstable
+
 // deck designed to be parsed once and then used for lookups. The load of the parsing is in the request context as to
 // not block the sub
 type deck struct {
@@ -229,6 +231,10 @@ func parseCardBytes(cardSection []byte) []byte {
 	return cardSection[:sectionEnd]
 }
 
+// endregion
+
+// region stable parse logic
+
 func decompress(s string) (string, error) {
 	parts := strings.Split(s, "||")
 	if len(parts) < 2 {
@@ -319,3 +325,5 @@ func decompressDeck(deck string) (map[string]int, error) {
 
 	return deckDict, nil
 }
+
+// endregion
