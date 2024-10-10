@@ -85,6 +85,19 @@ type deck struct {
 	parseOnce sync.Once
 }
 
+// Bytes use to get parsed deck
+func (d *deck) Bytes() (res []byte, err error) {
+	d.parseOnce.Do(func() {
+		err = d.parse() // if this fails once, it will fail every time
+	})
+	return d.buf, err
+}
+
+// parse
+func (d *deck) parse() error {
+	return nil
+}
+
 func decompress(s string) (string, error) {
 	parts := strings.Split(s, "||")
 	if len(parts) < 2 {
