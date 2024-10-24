@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"net/http/httptest"
 	"os"
 	"strings"
@@ -91,7 +93,7 @@ func (u *userAuthStub) AuthenticateRedis(ctx context.Context, userID, token stri
 		return models.User{}, &errors2.AuthError{Err: errors.New("invalid token")}
 	}
 
-	return models.User{}, nil
+	return usr, nil
 }
 
 func TestAPIHandler(t *testing.T) {
@@ -312,4 +314,119 @@ func TestAPIHandler(t *testing.T) {
 			})
 		}
 	})
+}
+
+func timestampFileFmt() string {
+	return time.Now().Format("2006-01-02T15-04-05")
+}
+
+func TestServe(t *testing.T) {
+	ctx := context.Background()
+	cancel := o11y.Init("test")
+	defer cancel(ctx)
+
+	username := "test"
+
+	authStub := &userAuthStub{
+		redisUserMap: map[string]models.User{
+			username: { // hardcoded from the mod tests
+				ID:    "test",
+				Hash:  "test",
+				Login: "test",
+			},
+		},
+	}
+
+	pubSubStub := &pubSubStub{
+		messageChan: make(chan dummyMessage, 1), // buffer 1 so that we can read even if we start the read after the write
+	}
+
+	bc, err := broadcaster.NewBroadcaster(pubSubStub, 2, time.Second*1, time.Second*2)
+	assert.NilError(t, err)
+
+	// TODO: stub for twitch service
+	apiHandler, err := New(authStub, bc)
+	assert.NilError(t, err)
+
+	apiHandler.broadcastDelayIncrement = time.Nanosecond
+
+	handlerFunc := apiHandler.Router.Handler()
+
+	dumpDirPath := "./testdata/out"
+
+	err = os.MkdirAll(dumpDirPath, 0755)
+	assert.NilError(t, err)
+
+	// control file write rate, no more than one write every 1.5s
+	lastRequestTime := time.Now()
+	writeAfterTime := time.Millisecond * 1500
+
+	interceptFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var msgRawBts []byte
+		if r.Body != nil {
+			rCpy := bytes.NewBuffer(nil)
+
+			_, err := io.Copy(rCpy, r.Body)
+			assert.NilError(t, err)
+
+			r.Body = io.NopCloser(rCpy)
+
+			msgRawBts = rCpy.Bytes()
+		}
+
+		handlerFunc.ServeHTTP(w, r)
+
+		if r.Body == nil {
+			return
+		}
+
+		var msg slaytherelics.PubSubMessage
+		err := json.Unmarshal(msgRawBts, &msg)
+		assert.NilError(t, err)
+
+		fmt.Printf("Got message - %s\n", string(msgRawBts))
+
+		if msg.MessageType != slaytherelics.MessageTypeDeck {
+			return
+		}
+
+		defer func() {
+			lastRequestTime = time.Now()
+		}()
+
+		// read resulting deck and log raw to file
+		deckStr := msg.MessageContent.(slaytherelics.MessageContentDeck).Deck
+		deckMap, err := decompressDeck(deckStr)
+		assert.NilError(t, err)
+
+		deckContent := formatDeck(deckMap)
+
+		fmt.Println("Formatted -\n", string(deckContent))
+
+		if time.Since(lastRequestTime) < writeAfterTime {
+			return
+		}
+
+		deckJSON, err := json.Marshal(deckMap)
+		assert.NilError(t, err)
+
+		deckPath := fmt.Sprintf("%s/%s-%s-raw.json", dumpDirPath, username, timestampFileFmt())
+
+		err = os.WriteFile(deckPath, msgRawBts, 0644)
+		assert.NilError(t, err)
+
+		deckJSONPath := fmt.Sprintf("%s/%s-%s-cards.json", dumpDirPath, username, timestampFileFmt())
+
+		err = os.WriteFile(deckJSONPath, deckJSON, 0644)
+		assert.NilError(t, err)
+	})
+
+	srv := http.Server{
+		Addr:    ":8080",
+		Handler: interceptFunc,
+	}
+
+	fmt.Println("Listening on", srv.Addr)
+
+	srv.ListenAndServe()
 }
