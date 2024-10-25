@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -14,6 +13,18 @@ import (
 )
 
 const WILDCARDS = "0123456789abcdefghijklmnopqrstvwxyzABCDEFGHIJKLMNOPQRSTVWXYZ_`[]/^%?@><=-+*:;,.()#$!'{}~"
+
+var compressionWildcardRegex []*regexp.Regexp
+
+func init() {
+	escapeRegex := regexp.MustCompile(`[-\/\\^$*+?.()|[\]{}]`)
+	compressionWildcardRegex = make([]*regexp.Regexp, 0, len(WILDCARDS))
+	for i := range WILDCARDS {
+		wildCard := fmt.Sprintf("&%c", WILDCARDS[i])
+		escaped := escapeRegex.ReplaceAllString(wildCard, "\\$&")
+		compressionWildcardRegex = append(compressionWildcardRegex, regexp.MustCompile(escaped))
+	}
+}
 
 func (a *API) getDeckHandler(c *gin.Context) {
 	name := c.Param("name")
@@ -68,11 +79,6 @@ func formatDeck(deck map[string]int) []byte {
 	return buf.Bytes()
 }
 
-func escapeRegexp(s string) string {
-	r := regexp.MustCompile(`[-\/\\^$*+?.()|[\]{}]`)
-	return r.ReplaceAllString(s, "\\$&")
-}
-
 func decompress(s string) (string, error) {
 	parts := strings.Split(s, "||")
 	if len(parts) < 2 {
@@ -84,51 +90,54 @@ func decompress(s string) (string, error) {
 
 	for i := len(compressionDict) - 1; i >= 0; i-- {
 		word := compressionDict[i]
-		wildCard := fmt.Sprintf("&%c", WILDCARDS[i])
-		r, err := regexp.Compile(escapeRegexp(wildCard))
-		if err != nil {
-			return "", err
-		}
-		text = r.ReplaceAllString(text, word)
+		text = compressionWildcardRegex[i].ReplaceAllString(text, word)
 	}
 	return text, nil
 }
 
 func parseCommaDelimitedIntegerArray(s string) ([]int, error) {
 	if s == "-" {
-		return make([]int, 0), nil
+		return nil, nil
 	}
-	//nolint:prealloc
-	var result []int
-	err := json.Unmarshal([]byte(fmt.Sprintf("[%s]", s)), &result)
-	return result, err
+	currIndex := 0
+	result := make([]int, 0, strings.Count(s, ",")+1)
+	for currIndex < len(s) {
+		nextIndex := currIndex + strings.Index(s[currIndex:], ",")
+		if nextIndex < currIndex {
+			nextIndex = len(s)
+		}
+		resultVal, err := strconv.ParseInt(s[currIndex:nextIndex], 10, 64)
+		if err != nil {
+			return nil, err
+		}
+		currIndex = nextIndex + 1
+		result = append(result, int(resultVal))
+	}
+	return result, nil
 }
 
-func splitSemicolonDelimited2DArray(s string) [][]string {
+func splitDoubleSemicolonArray(s string) []string {
 	if s == "-" {
-		return make([][]string, 0)
+		return nil
 	}
 
-	//nolint:prealloc
-	var result [][]string
-	split := strings.Split(s, ";;")
-	for _, element := range split {
-		result = append(result, strings.Split(element, ";"))
+	return strings.Split(s, ";;")
+}
+
+func parseCards(cardSections []string) []string {
+	result := make([]string, 0, len(cardSections))
+	for _, cardSection := range cardSections {
+		result = append(result, parseCard(cardSection))
 	}
 	return result
 }
 
-func parseCards(cards [][]string) []string {
-	//nolint:prealloc
-	var result []string
-	for _, card := range cards {
-		result = append(result, parseCard(card))
+func parseCard(cardSection string) string {
+	sectionEnd := strings.Index(cardSection, ";")
+	if sectionEnd == -1 {
+		return cardSection
 	}
-	return result
-}
-
-func parseCard(c []string) string {
-	return c[0]
+	return cardSection[:sectionEnd]
 }
 
 func decompressDeck(deck string) (map[string]int, error) {
@@ -142,9 +151,9 @@ func decompressDeck(deck string) (map[string]int, error) {
 	if err != nil {
 		return nil, err
 	}
-	cards := parseCards(splitSemicolonDelimited2DArray(parts[1]))
+	cards := parseCards(splitDoubleSemicolonArray(parts[1]))
 
-	deckDict := make(map[string]int)
+	deckDict := make(map[string]int, len(cards))
 	for _, idx := range d {
 		if idx < 0 || idx >= len(cards) {
 			return nil, errors.New("card index out of bounds")
