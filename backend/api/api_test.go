@@ -357,10 +357,6 @@ func TestServe(t *testing.T) {
 	err = os.MkdirAll(dumpDirPath, 0755)
 	assert.NilError(t, err)
 
-	// control file write rate, no more than one write every 1.5s
-	lastRequestTime := time.Now()
-	writeAfterTime := time.Millisecond * 1500
-
 	interceptFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var msgRawBts []byte
 		if r.Body != nil {
@@ -384,35 +380,37 @@ func TestServe(t *testing.T) {
 		err := json.Unmarshal(msgRawBts, &msg)
 		assert.NilError(t, err)
 
-		fmt.Printf("Got message - %s\n", string(msgRawBts))
-
 		if msg.MessageType != slaytherelics.MessageTypeDeck {
+			fmt.Printf("Got message - %s\n", msgRawBts)
 			return
 		}
 
-		defer func() {
-			lastRequestTime = time.Now()
-		}()
+		unescapedBuf := bytes.NewBuffer(make([]byte, 0, len(msgRawBts)))
+		enc := json.NewEncoder(unescapedBuf)
+		enc.SetEscapeHTML(false)
+		err = enc.Encode(msg)
+		assert.NilError(t, err)
 
-		// read resulting deck and log raw to file
 		deckStr := msg.MessageContent.(slaytherelics.MessageContentDeck).Deck
+		// read resulting deck and log raw to file
 		deckMap, err := decompressDeck(deckStr)
 		assert.NilError(t, err)
+
+		decompStr, err := decompress(deckStr)
+		assert.NilError(t, err)
+
+		fmt.Println("Decompressed -\n", decompStr)
 
 		deckContent := formatDeck(deckMap)
 
 		fmt.Println("Formatted -\n", string(deckContent))
-
-		if time.Since(lastRequestTime) < writeAfterTime {
-			return
-		}
 
 		deckJSON, err := json.Marshal(deckMap)
 		assert.NilError(t, err)
 
 		deckPath := fmt.Sprintf("%s/%s-%s-raw.json", dumpDirPath, username, timestampFileFmt())
 
-		err = os.WriteFile(deckPath, msgRawBts, 0644)
+		err = os.WriteFile(deckPath, unescapedBuf.Bytes(), 0644)
 		assert.NilError(t, err)
 
 		deckJSONPath := fmt.Sprintf("%s/%s-%s-cards.json", dumpDirPath, username, timestampFileFmt())
