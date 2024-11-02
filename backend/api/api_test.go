@@ -320,6 +320,8 @@ func timestampFileFmt() string {
 	return time.Now().Format("2006-01-02T15-04-05")
 }
 
+// see https://github.com/benw10-1/STR-Spire-Mod/commit/6a31caa8dc94ddf2de66e068603df4514e1aa3f0 for mock implementation
+// otherwise set API_URL in the mod to http://localhost:8080
 func TestServe(t *testing.T) {
 	ctx := context.Background()
 	cancel := o11y.Init("test")
@@ -357,10 +359,6 @@ func TestServe(t *testing.T) {
 	err = os.MkdirAll(dumpDirPath, 0755)
 	assert.NilError(t, err)
 
-	// control file write rate, no more than one write every 1.5s
-	lastRequestTime := time.Now()
-	writeAfterTime := time.Millisecond * 1500
-
 	interceptFunc := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var msgRawBts []byte
 		if r.Body != nil {
@@ -390,10 +388,6 @@ func TestServe(t *testing.T) {
 			return
 		}
 
-		defer func() {
-			lastRequestTime = time.Now()
-		}()
-
 		// read resulting deck and log raw to file
 		deckStr := msg.MessageContent.(slaytherelics.MessageContentDeck).Deck
 		deckMap, err := decompressDeck(deckStr)
@@ -402,10 +396,6 @@ func TestServe(t *testing.T) {
 		deckContent := formatDeck(deckMap)
 
 		fmt.Println("Formatted -\n", string(deckContent))
-
-		if time.Since(lastRequestTime) < writeAfterTime {
-			return
-		}
 
 		deckJSON, err := json.Marshal(deckMap)
 		assert.NilError(t, err)
